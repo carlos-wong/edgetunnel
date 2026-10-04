@@ -1707,6 +1707,7 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 	};
 
 	const 处理WS显式传输错误 = (err) => {
+		log('[TRACE] 处理WS显式传输错误: ' + ((err && err.message) || err));
 		if (WS显式传输失败) return;
 		WS显式传输失败 = true;
 		WS显式传输停止接收 = true;
@@ -2513,6 +2514,7 @@ async function forwardataudp(udpChunk, webSocket, respHeader, request, 响应封
 }
 
 function closeSocketQuietly(socket) {
+	log('[TRACE] closeSocketQuietly: 关闭 WS readyState=' + (socket && socket.readyState));
 	try {
 		if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
 			socket.close();
@@ -3033,6 +3035,7 @@ function 创建下行Grain发送器(webSocket, headerData = null, isActive = nul
 
 async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, isCurrentSocket = null, remoteConnWrapper = null) {
 	let header = headerData, hasData = false, reader, useBYOB = false, readError = null;
+	log('[TRACE] connectStreams: 开始下行转发');
 	const BYOB单次读取上限 = 64 * 1024;
 	const 当前连接仍有效 = () => !isCurrentSocket || isCurrentSocket();
 	const 下行发送器 = 创建下行Grain发送器(webSocket, header, 当前连接仍有效);
@@ -3049,7 +3052,7 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 			while (true) {
 				const { done, value } = await reader.read();
 				if (!当前连接仍有效()) break;
-				if (done) break;
+				if (done) { log('[TRACE] connectStreams: 下行 EOF (非BYOB)'); break; }
 				if (!value || value.byteLength === 0) continue;
 				hasData = true;
 				if (value.byteLength >= 下行Grain包字节) {
@@ -3064,7 +3067,7 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 			while (true) {
 				const { done, value } = await reader.read(new Uint8Array(readBuffer, 0, BYOB单次读取上限));
 				if (!当前连接仍有效()) break;
-				if (done) break;
+				if (done) { log('[TRACE] connectStreams: 下行 EOF (BYOB)'); break; }
 				if (!value || value.byteLength === 0) continue;
 				hasData = true;
 				if (value.byteLength >= 下行Grain包字节) {
@@ -3088,6 +3091,7 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 		try { reader.releaseLock() } catch (e) { }
 		try { remoteSocket.close() } catch (e) { }
 	}
+	log('[TRACE] connectStreams: 下行结束 hasData=' + hasData + ' readError=' + ((readError && readError.message) || 'none') + ' 仍有效=' + 当前连接仍有效());
 	if (!hasData && retryFunc && webSocket.readyState === WebSocket.OPEN && 当前连接仍有效()) {
 		try {
 			await retryFunc();
