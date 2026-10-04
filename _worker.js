@@ -2237,6 +2237,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 
 	async function 写入首包(remoteSock, data) {
 		if (有效数据长度(data) <= 0) return;
+		{ const _b = 数据转Uint8Array(data); log('[TRACE] 写入首包(发给目标站) hex=' + Array.from(_b.slice(0, 24)).map(x => x.toString(16).padStart(2, '0')).join(' ') + ' | ASCII=' + Array.from(_b.slice(0, 90)).map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : '.').join('')); }
 		const writer = remoteSock.writable.getWriter();
 		try { await writer.write(数据转Uint8Array(data)) }
 		finally { try { writer.releaseLock() } catch (e) { } }
@@ -2527,7 +2528,13 @@ function formatIdentifier(arr, offset = 0) {
 	return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}`;
 }
 
+let _traceWS发送计数 = 0;
 async function WebSocket发送并等待(webSocket, payload) {
+	if (_traceWS发送计数 < 3 && payload && payload.byteLength !== undefined) {
+		_traceWS发送计数++;
+		const _pv = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+		log('[TRACE] WS 实际发送 hex=' + Array.from(_pv.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' ') + ' len=' + payload.byteLength);
+	}
 	const sendResult = webSocket.send(payload);
 	if (sendResult && typeof sendResult.then === 'function') await sendResult;
 }
@@ -2895,6 +2902,7 @@ function 创建下行Grain发送器(webSocket, headerData = null, isActive = nul
 
 	const 附加响应头 = (chunk) => {
 		const responseHeader = 获取响应头();
+		log('[TRACE] 附加响应头: header=' + (responseHeader ? Array.from(responseHeader).map(b => b.toString(16).padStart(2, '0')).join(' ') : 'NULL') + ' | chunk首8=' + Array.from(chunk.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(' '));
 		if (!responseHeader) return chunk;
 		const merged = new Uint8Array(responseHeader.length + chunk.byteLength);
 		merged.set(responseHeader, 0);
@@ -3036,6 +3044,9 @@ function 创建下行Grain发送器(webSocket, headerData = null, isActive = nul
 async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, isCurrentSocket = null, remoteConnWrapper = null) {
 	let header = headerData, hasData = false, reader, useBYOB = false, readError = null;
 	log('[TRACE] connectStreams: 开始下行转发');
+	let 下行首包已记录 = false;
+	const _traceHex = (d) => { try { if (!d) return 'NULL/EMPTY'; const u = d instanceof Uint8Array ? d : new Uint8Array(d.buffer || d); return Array.from(u.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '); } catch (e) { return 'UNKNOWN'; } };
+	log('[TRACE] respHeader(发给客户端的 VLESS 响应头) hex=' + _traceHex(headerData));
 	const BYOB单次读取上限 = 64 * 1024;
 	const 当前连接仍有效 = () => !isCurrentSocket || isCurrentSocket();
 	const 下行发送器 = 创建下行Grain发送器(webSocket, header, 当前连接仍有效);
@@ -3055,6 +3066,7 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 				if (done) { log('[TRACE] connectStreams: 下行 EOF (非BYOB)'); break; }
 				if (!value || value.byteLength === 0) continue;
 				hasData = true;
+				if (!下行首包已记录) { 下行首包已记录 = true; log('[TRACE] 下行首批原始字节 hex=' + _traceHex(value) + ' len=' + value.byteLength + ' | ASCII=' + Array.from(value.slice(0, 200)).map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : '.').join('')); }
 				if (value.byteLength >= 下行Grain包字节) {
 					await 下行发送器.flush();
 					await 下行发送器.直接发送(value);
@@ -3070,6 +3082,7 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 				if (done) { log('[TRACE] connectStreams: 下行 EOF (BYOB)'); break; }
 				if (!value || value.byteLength === 0) continue;
 				hasData = true;
+				if (!下行首包已记录) { 下行首包已记录 = true; log('[TRACE] 下行首批原始字节 hex=' + _traceHex(value) + ' len=' + value.byteLength + ' | ASCII=' + Array.from(value.slice(0, 200)).map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : '.').join('')); }
 				if (value.byteLength >= 下行Grain包字节) {
 					await 下行发送器.flush();
 					await 下行发送器.直接发送(value);
