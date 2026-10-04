@@ -1783,6 +1783,7 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 		}
 	}
 
+	log('[TRACE] 处理WS请求: 即将返回 101');
 	return new Response(null, { status: 101, webSocket: clientSock, headers: { 'Sec-WebSocket-Extensions': '' } });
 }
 
@@ -2189,6 +2190,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 	if (!Number.isInteger(remoteConnWrapper.generation)) remoteConnWrapper.generation = 0;
 
 	const 安装当前连接 = async (socket, generation, downlinkDrain, retryFunc = null) => {
+		log('[TRACE] 安装当前连接: 等待 downlinkDrain');
 		try { await downlinkDrain } catch (e) {
 			if (remoteConnWrapper.downlinkDrain === downlinkDrain) remoteConnWrapper.downlinkDrain = Promise.resolve();
 			try { socket?.close?.() } catch (_) { }
@@ -2196,6 +2198,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 			throw e;
 		}
 		if (remoteConnWrapper.downlinkDrain === downlinkDrain) remoteConnWrapper.downlinkDrain = Promise.resolve();
+		log('[TRACE] 安装当前连接: downlinkDrain 已通过');
 		const 连接仍有效 = () => remoteConnWrapper.generation === generation && remoteConnWrapper.socket === socket;
 		if (remoteConnWrapper.generation !== generation || ws.readyState !== WebSocket.OPEN) {
 			try { socket?.close?.() } catch (e) { }
@@ -2300,13 +2303,17 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 			: `[TCP直连] 并发尝试 ${候选列表.length} 路: ${address}:${port}`);
 		let socket = null;
 		try {
+			log('[TRACE] connectDirect: 拨号开始 ' + address + ':' + port);
 			const 连接结果 = await 并发打开候选连接(候选列表);
+			log('[TRACE] connectDirect: 拨号返回 OK');
 			socket = 连接结果.socket;
 			if (预加载候选列表) {
 				const winner = 连接结果.candidate;
 				log(`[TCP直连] 预加载竞速结果: ${winner.hostname}:${winner.port} 胜出，源域名: ${winner.resolvedFrom || address}`);
 			}
+			log('[TRACE] connectDirect: 写入首包开始');
 			await 写入首包(socket, data);
+			log('[TRACE] connectDirect: 写入首包完成');
 			return socket;
 		} catch (err) {
 			try { socket?.close?.() } catch (e) { }
@@ -2445,6 +2452,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 			const 世代连接 = 开始TCP连接世代(remoteConnWrapper);
 			直连世代 = 世代连接.generation;
 			const initialSocket = await connectDirect(host, portNum, rawData, true);
+			log('[TRACE] TCP转发: connectDirect 已返回，开始安装连接');
 			await 安装当前连接(initialSocket, 直连世代, 世代连接.downlinkDrain, async () => {
 				if (remoteConnWrapper.generation !== 直连世代 || remoteConnWrapper.socket !== initialSocket) return;
 				await connecttoPry();
