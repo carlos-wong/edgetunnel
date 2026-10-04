@@ -1,3 +1,38 @@
-name = "v20251104"
+# Cloudflare Workers deploy config for the edgetunnel fork.
+#
+# Target: match the already-live Worker "edgetunnel-worker" so that
+#   wrangler deploy
+# can rebuild it in one step. The DNS record for t.thecyberfarm.com
+# (type Worker -> edgetunnel-worker) stays untouched, so downstream
+# clients need no config change.
+#
+# SECURITY: this repository is PUBLIC, so credentials must never be written
+# into this file. ADMIN (admin password) and UUID (VLESS user id) are kept
+#   - as Worker variables in the Cloudflare dashboard (current production), or
+#   - via `wrangler secret put ADMIN` / `wrangler secret put UUID`.
+# UUID must keep its current value; otherwise the Worker falls back to a
+# UUID derived from MD5MD5(ADMIN + KEY) and every client breaks.
+
+name = "edgetunnel-worker"
+main = "_worker.js"
 compatibility_date = "2025-11-04"
-pages_build_output_dir = "./"
+workers_dev = true
+
+# Same binding name as production: the KV namespace edgetunnel_kv holds
+# config.json / cf.json.
+[[kv_namespaces]]
+binding = "KV"
+id = "f3ba427f7a4347b892131bee8828516c"
+
+# Non-secret variables only; see the SECURITY note above for ADMIN / UUID.
+[vars]
+PROXYIP = "ProxyIP.US.CMLiussss.net"
+
+# Enable Workers logs so runtime exceptions can be captured.
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+persist = true
