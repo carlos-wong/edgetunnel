@@ -1707,7 +1707,7 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 	};
 
 	const 处理WS显式传输错误 = (err) => {
-		log('[TRACE] 处理WS显式传输错误: ' + ((err && err.message) || err));
+		traceLog('ws错误', '处理WS显式传输错误: ' + ((err && err.message) || err));
 		if (WS显式传输失败) return;
 		WS显式传输失败 = true;
 		WS显式传输停止接收 = true;
@@ -1784,7 +1784,7 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 		}
 	}
 
-	log('[TRACE] 处理WS请求: 即将返回 101');
+	traceLog('ws就绪', '处理WS请求: 即将返回 101');
 	return new Response(null, { status: 101, webSocket: clientSock, headers: { 'Sec-WebSocket-Extensions': '' } });
 }
 
@@ -2191,7 +2191,6 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 	if (!Number.isInteger(remoteConnWrapper.generation)) remoteConnWrapper.generation = 0;
 
 	const 安装当前连接 = async (socket, generation, downlinkDrain, retryFunc = null) => {
-		log('[TRACE] 安装当前连接: 等待 downlinkDrain');
 		try { await downlinkDrain } catch (e) {
 			if (remoteConnWrapper.downlinkDrain === downlinkDrain) remoteConnWrapper.downlinkDrain = Promise.resolve();
 			try { socket?.close?.() } catch (_) { }
@@ -2199,7 +2198,6 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 			throw e;
 		}
 		if (remoteConnWrapper.downlinkDrain === downlinkDrain) remoteConnWrapper.downlinkDrain = Promise.resolve();
-		log('[TRACE] 安装当前连接: downlinkDrain 已通过');
 		const 连接仍有效 = () => remoteConnWrapper.generation === generation && remoteConnWrapper.socket === socket;
 		if (remoteConnWrapper.generation !== generation || ws.readyState !== WebSocket.OPEN) {
 			try { socket?.close?.() } catch (e) { }
@@ -2237,7 +2235,6 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 
 	async function 写入首包(remoteSock, data) {
 		if (有效数据长度(data) <= 0) return;
-		{ const _b = 数据转Uint8Array(data); log('[TRACE] 写入首包(发给目标站) hex=' + Array.from(_b.slice(0, 24)).map(x => x.toString(16).padStart(2, '0')).join(' ') + ' | ASCII=' + Array.from(_b.slice(0, 90)).map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : '.').join('')); }
 		const writer = remoteSock.writable.getWriter();
 		try { await writer.write(数据转Uint8Array(data)) }
 		finally { try { writer.releaseLock() } catch (e) { } }
@@ -2305,17 +2302,15 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 			: `[TCP直连] 并发尝试 ${候选列表.length} 路: ${address}:${port}`);
 		let socket = null;
 		try {
-			log('[TRACE] connectDirect: 拨号开始 ' + address + ':' + port);
+			traceLog('拨号开始', 'connectDirect: 拨号开始 ' + address + ':' + port);
 			const 连接结果 = await 并发打开候选连接(候选列表);
-			log('[TRACE] connectDirect: 拨号返回 OK');
+			traceLog('拨号成功', 'connectDirect: 拨号返回 OK');
 			socket = 连接结果.socket;
 			if (预加载候选列表) {
 				const winner = 连接结果.candidate;
 				log(`[TCP直连] 预加载竞速结果: ${winner.hostname}:${winner.port} 胜出，源域名: ${winner.resolvedFrom || address}`);
 			}
-			log('[TRACE] connectDirect: 写入首包开始');
 			await 写入首包(socket, data);
-			log('[TRACE] connectDirect: 写入首包完成');
 			return socket;
 		} catch (err) {
 			try { socket?.close?.() } catch (e) { }
@@ -2454,7 +2449,6 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 			const 世代连接 = 开始TCP连接世代(remoteConnWrapper);
 			直连世代 = 世代连接.generation;
 			const initialSocket = await connectDirect(host, portNum, rawData, true);
-			log('[TRACE] TCP转发: connectDirect 已返回，开始安装连接');
 			await 安装当前连接(initialSocket, 直连世代, 世代连接.downlinkDrain, async () => {
 				if (remoteConnWrapper.generation !== 直连世代 || remoteConnWrapper.socket !== initialSocket) return;
 				await connecttoPry();
@@ -2515,7 +2509,6 @@ async function forwardataudp(udpChunk, webSocket, respHeader, request, 响应封
 }
 
 function closeSocketQuietly(socket) {
-	log('[TRACE] closeSocketQuietly: 关闭 WS readyState=' + (socket && socket.readyState));
 	try {
 		if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
 			socket.close();
@@ -2528,13 +2521,7 @@ function formatIdentifier(arr, offset = 0) {
 	return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}`;
 }
 
-let _traceWS发送计数 = 0;
 async function WebSocket发送并等待(webSocket, payload) {
-	if (_traceWS发送计数 < 3 && payload && payload.byteLength !== undefined) {
-		_traceWS发送计数++;
-		const _pv = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
-		log('[TRACE] WS 实际发送 hex=' + Array.from(_pv.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' ') + ' len=' + payload.byteLength);
-	}
 	const sendResult = webSocket.send(payload);
 	if (sendResult && typeof sendResult.then === 'function') await sendResult;
 }
@@ -2902,7 +2889,6 @@ function 创建下行Grain发送器(webSocket, headerData = null, isActive = nul
 
 	const 附加响应头 = (chunk) => {
 		const responseHeader = 获取响应头();
-		log('[TRACE] 附加响应头: header=' + (responseHeader ? Array.from(responseHeader).map(b => b.toString(16).padStart(2, '0')).join(' ') : 'NULL') + ' | chunk首8=' + Array.from(chunk.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(' '));
 		if (!responseHeader) return chunk;
 		const merged = new Uint8Array(responseHeader.length + chunk.byteLength);
 		merged.set(responseHeader, 0);
@@ -3043,10 +3029,7 @@ function 创建下行Grain发送器(webSocket, headerData = null, isActive = nul
 
 async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, isCurrentSocket = null, remoteConnWrapper = null) {
 	let header = headerData, hasData = false, reader, useBYOB = false, readError = null;
-	log('[TRACE] connectStreams: 开始下行转发');
-	let 下行首包已记录 = false;
-	const _traceHex = (d) => { try { if (!d) return 'NULL/EMPTY'; const u = d instanceof Uint8Array ? d : new Uint8Array(d.buffer || d); return Array.from(u.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '); } catch (e) { return 'UNKNOWN'; } };
-	log('[TRACE] respHeader(发给客户端的 VLESS 响应头) hex=' + _traceHex(headerData));
+	traceLog('下行开始', 'connectStreams: 开始下行转发');
 	const BYOB单次读取上限 = 64 * 1024;
 	const 当前连接仍有效 = () => !isCurrentSocket || isCurrentSocket();
 	const 下行发送器 = 创建下行Grain发送器(webSocket, header, 当前连接仍有效);
@@ -3063,10 +3046,9 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 			while (true) {
 				const { done, value } = await reader.read();
 				if (!当前连接仍有效()) break;
-				if (done) { log('[TRACE] connectStreams: 下行 EOF (非BYOB)'); break; }
+				if (done) break;
 				if (!value || value.byteLength === 0) continue;
 				hasData = true;
-				if (!下行首包已记录) { 下行首包已记录 = true; log('[TRACE] 下行首批原始字节 hex=' + _traceHex(value) + ' len=' + value.byteLength + ' | ASCII=' + Array.from(value.slice(0, 200)).map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : '.').join('')); }
 				if (value.byteLength >= 下行Grain包字节) {
 					await 下行发送器.flush();
 					await 下行发送器.直接发送(value);
@@ -3079,10 +3061,9 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 			while (true) {
 				const { done, value } = await reader.read(new Uint8Array(readBuffer, 0, BYOB单次读取上限));
 				if (!当前连接仍有效()) break;
-				if (done) { log('[TRACE] connectStreams: 下行 EOF (BYOB)'); break; }
+				if (done) break;
 				if (!value || value.byteLength === 0) continue;
 				hasData = true;
-				if (!下行首包已记录) { 下行首包已记录 = true; log('[TRACE] 下行首批原始字节 hex=' + _traceHex(value) + ' len=' + value.byteLength + ' | ASCII=' + Array.from(value.slice(0, 200)).map(x => (x >= 32 && x < 127) ? String.fromCharCode(x) : '.').join('')); }
 				if (value.byteLength >= 下行Grain包字节) {
 					await 下行发送器.flush();
 					await 下行发送器.直接发送(value);
@@ -3104,7 +3085,6 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 		try { reader.releaseLock() } catch (e) { }
 		try { remoteSocket.close() } catch (e) { }
 	}
-	log('[TRACE] connectStreams: 下行结束 hasData=' + hasData + ' readError=' + ((readError && readError.message) || 'none') + ' 仍有效=' + 当前连接仍有效());
 	if (!hasData && retryFunc && webSocket.readyState === WebSocket.OPEN && 当前连接仍有效()) {
 		try {
 			await retryFunc();
@@ -4830,6 +4810,18 @@ function 获取传输路径参数值(配置 = {}, 节点路径 = '/', 作为优�
 
 function log(...args) {
 	if (调试日志打印) console.log(...args);
+}
+
+// 关键节点 TRACE 插桩：每个节点各自计数，每 TRACE采样间隔 次命中才真正写一条日志。
+// 目的——把插桩日志量从「每连接约 20 条」压到「约 0.5 条」，避免打满 Workers Logs
+// 免费额度（Free 档 200,000 条/日）；同时保留连接建立/拨号/下行/WS 错误等状态转换。
+const TRACE采样间隔 = 10;
+const _trace命中计数 = Object.create(null);
+function traceLog(节点, ...args) {
+	if (!调试日志打印) return;
+	const 命中次数 = (_trace命中计数[节点] = (_trace命中计数[节点] || 0) + 1);
+	if (命中次数 % TRACE采样间隔 !== 0) return;
+	console.log(`[TRACE][${节点} 第${命中次数}次]`, ...args);
 }
 
 function Clash订阅配置文件热补丁(Clash_原始订阅内容, config_JSON = {}) {
