@@ -29,8 +29,13 @@ id = "f3ba427f7a4347b892131bee8828516c"
 PROXYIP = "ProxyIP.US.CMLiussss.net"
 
 # Enable Workers logs so runtime exceptions can be captured.
+# head_sampling_rate: log 10% of requests instead of 100%. Sampling is head-based,
+# so an accepted request keeps its complete log trail. This keeps the daily event
+# count inside the Workers Logs free tier (200,000 events/day) while still
+# producing full traces for about 1 in 10 connections.
 [observability]
 enabled = true
+head_sampling_rate = 0.1
 
 [observability.logs]
 enabled = true
